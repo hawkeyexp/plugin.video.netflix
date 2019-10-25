@@ -18,11 +18,17 @@ import xbmcaddon
 from resources.lib.globals import g
 import resources.lib.common as common
 import resources.lib.kodi.ui as ui
+import resources.lib.cache as cache
 
 from .request_builder import MSLRequestBuilder
 from .profiles import enabled_profiles
 from .converter import convert_to_dash
 from .exceptions import MSLError
+
+try:  # Python 2
+    unicode
+except NameError:  # Python 3
+    unicode = str  # pylint: disable=redefined-builtin
 
 CHROME_BASE_URL = 'https://www.netflix.com/nq/msl_v1/cadmium/'
 ENDPOINTS = {
@@ -57,22 +63,44 @@ class MSLHandler(object):
 
     def __init__(self):
         # pylint: disable=broad-except
+        self.request_builder = None
         try:
             msl_data = json.loads(common.load_file('msl_data.json'))
-            self.request_builder = MSLRequestBuilder(msl_data)
             common.debug('Loaded MSL data from disk')
+        except Exception:
+            msl_data = None
+        try:
+            self.request_builder = MSLRequestBuilder(msl_data)
+            # Addon just installed, the service starts but there is no esn
+            if g.get_esn():
+                self.check_mastertoken_validity()
         except Exception:
             import traceback
             common.debug(traceback.format_exc())
-            common.debug('Stored MSL data expired or not available')
-            self.request_builder = MSLRequestBuilder()
-            if self.perform_key_handshake():
-                self.request_builder = MSLRequestBuilder(json.loads(
-                    common.load_file('msl_data.json')))
-                common.debug('Loaded renewed MSL data from disk')
         common.register_slot(
             signal=common.Signals.ESN_CHANGED,
             callback=self.perform_key_handshake)
+
+    def check_mastertoken_validity(self):
+        """Return the mastertoken validity and executes a new key handshake when necessary"""
+        if self.request_builder.crypto.mastertoken:
+            time_now = time.time()
+            renewable = self.request_builder.crypto.renewal_window < time_now
+            expired = self.request_builder.crypto.expiration <= time_now
+        else:
+            renewable = False
+            expired = True
+        if expired:
+            if not self.request_builder.crypto.mastertoken:
+                common.debug('Stored MSL data not available, a new key handshake will be performed')
+                self.request_builder = MSLRequestBuilder()
+            else:
+                common.debug('Stored MSL data is expired, a new key handshake will be performed')
+            if self.perform_key_handshake():
+                self.request_builder = MSLRequestBuilder(json.loads(
+                    common.load_file('msl_data.json')))
+            return self.check_mastertoken_validity()
+        return {'renewable': renewable, 'expired': expired}
 
     @display_error_info
     @common.time_execution(immediate=True)
@@ -132,6 +160,17 @@ class MSLHandler(object):
 
     @common.time_execution(immediate=True)
     def _load_manifest(self, viewable_id, esn):
+        cache_identifier = esn + '_' + unicode(viewable_id)
+        try:
+            # The manifest must be requested once and maintained for its entire duration
+            manifest = g.CACHE.get(cache.CACHE_MANIFESTS, cache_identifier, False)
+            common.debug('Manifest for {} with ESN {} obtained from the cache'
+                         .format(viewable_id, esn))
+            # Save the manifest to disk as reference
+            common.save_file('manifest.json', json.dumps(manifest))
+            return manifest
+        except cache.CacheMiss:
+            pass
         common.debug('Requesting manifest for {} with ESN {}'
                      .format(viewable_id, esn))
         profiles = enabled_profiles()
@@ -195,9 +234,17 @@ class MSLHandler(object):
             'echo': ''
         }
 
+        # Get and check mastertoken validity
+        mt_validity = self.check_mastertoken_validity()
         manifest = self._chunked_request(ENDPOINTS['manifest'],
-                                         manifest_request_data, esn)
+                                         manifest_request_data,
+                                         esn,
+                                         mt_validity)
+        # Save the manifest to disk as reference
         common.save_file('manifest.json', json.dumps(manifest))
+        # Save the manifest to the cache to retrieve it during its validity
+        expiration = int(manifest['expiration'] / 1000)
+        g.CACHE.add(cache.CACHE_MANIFESTS, cache_identifier, manifest, eol=expiration)
         if 'result' in manifest:
             return manifest['result']
         return manifest
@@ -239,10 +286,11 @@ class MSLHandler(object):
         return convert_to_dash(manifest)
 
     @common.time_execution(immediate=True)
-    def _chunked_request(self, endpoint, request_data, esn):
+    def _chunked_request(self, endpoint, request_data, esn, mt_validity=None):
         """Do a POST request and process the chunked response"""
         chunked_response = self._process_chunked_response(
-            self._post(endpoint, self.request_builder.msl_request(request_data, esn)))
+            self._post(endpoint, self.request_builder.msl_request(request_data, esn)),
+            mt_validity['renewable'] if mt_validity else None)
         return chunked_response['result']
 
     @common.time_execution(immediate=True)
@@ -257,8 +305,9 @@ class MSLHandler(object):
         response.raise_for_status()
         return response
 
+    # pylint: disable=unused-argument
     @common.time_execution(immediate=True)
-    def _process_chunked_response(self, response):
+    def _process_chunked_response(self, response, mt_renewable):
         """Parse and decrypt an encrypted chunked response. Raise an error
         if the response is plaintext json"""
         try:
@@ -269,6 +318,10 @@ class MSLHandler(object):
             # json() failed so parse and decrypt the chunked response
             common.debug('Received encrypted chunked response')
             response = _parse_chunks(response.text)
+            # TODO: sending for the renewal request is not yet implemented
+            # if mt_renewable:
+            #     # Check if mastertoken is renewed
+            #     self.request_builder.crypto.compare_mastertoken(response['header']['mastertoken'])
             decrypted_response = _decrypt_chunks(response['payloads'],
                                                  self.request_builder.crypto)
             return _raise_if_error(decrypted_response)
@@ -284,7 +337,15 @@ def _process_json_response(response):
 
 
 def _raise_if_error(decoded_response):
+    raise_error = False
+    # Catch a manifest/chunk error
     if any(key in decoded_response for key in ['error', 'errordata']):
+        raise_error = True
+    # Catch a license error
+    if 'result' in decoded_response and isinstance(decoded_response.get('result'), list):
+        if 'error' in decoded_response['result'][0]:
+            raise_error = True
+    if raise_error:
         common.error('Full MSL error information:')
         common.error(json.dumps(decoded_response))
         raise MSLError(_get_error_details(decoded_response))
@@ -292,13 +353,20 @@ def _raise_if_error(decoded_response):
 
 
 def _get_error_details(decoded_response):
+    # Catch a chunk error
     if 'errordata' in decoded_response:
         return json.loads(
             base64.standard_b64decode(
                 decoded_response['errordata']))['errormsg']
+    # Catch a manifest error
     if 'error' in decoded_response:
         if decoded_response['error'].get('errorDisplayMessage'):
             return decoded_response['error']['errorDisplayMessage']
+    # Catch a license error
+    if 'result' in decoded_response and isinstance(decoded_response.get('result'), list):
+        if 'error' in decoded_response['result'][0]:
+            if decoded_response['result'][0]['error'].get('errorDisplayMessage'):
+                return decoded_response['result'][0]['error']['errorDisplayMessage']
     return 'Unhandled error check log.'
 
 

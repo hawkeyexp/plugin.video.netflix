@@ -84,6 +84,14 @@ msgctxt "#30014"
 msgid "Account"
 msgstr ""
 
+msgctxt "#30015"
+msgid "Other options"
+msgstr ""
+
+msgctxt "#30016"
+msgid "ESN"
+msgstr ""
+
 msgctxt "#30017"
 msgid "Logout"
 msgstr ""
@@ -141,7 +149,7 @@ msgid "Remove from library"
 msgstr ""
 
 msgctxt "#30031"
-msgid "Change library title"
+msgid "General"
 msgstr ""
 
 msgctxt "#30032"
@@ -153,11 +161,11 @@ msgid "Enable Dolby Digital Plus (DDPlus HQ and Atmos on Premium)"
 msgstr ""
 
 msgctxt "#30034"
-msgid "ESN (set automatically, can be changed manually)"
+msgid "Manual ESN"
 msgstr ""
 
 msgctxt "#30035"
-msgid "Inputstream Addon Settings..."
+msgid "InputStream Adaptive settings..."
 msgstr ""
 
 msgctxt "#30036"
@@ -201,7 +209,7 @@ msgid "[COLOR cyan][B]-- NEXT PAGE --[/B][/COLOR]"
 msgstr ""
 
 msgctxt "#30046"
-msgid "Inputstream addon is not enabled"
+msgid "InputStream addon is not enabled"
 msgstr ""
 
 msgctxt "#30047"
@@ -645,7 +653,7 @@ msgid "Does your device support the 4K standard?\r\nThe device must:\r\nBe Netfl
 msgstr ""
 
 msgctxt "#30157"
-msgid "The InputStream settings panel will now be opened, so you have to change this option \"Override HDCP status\" to ON"
+msgid "The InputStream Adaptive settings panel will now be opened, so you have to change this option \"Override HDCP status\" to ON"
 msgstr ""
 
 msgctxt "#30158"
@@ -866,4 +874,48 @@ msgstr ""
 
 msgctxt "#30212"
 msgid "There is no device that handles the auto-updates of shared-library"
+msgstr ""
+
+msgctxt "#30213"
+msgid "InputStream Helper settings..."
+msgstr ""
+
+msgctxt "#30214"
+msgid "Force the update of my list"
+msgstr ""
+
+msgctxt "#30215"
+msgid "Highlight titles included in my list with a color"
+msgstr ""
+
+msgctxt "#30216"
+msgid "Show ESN in use"
+msgstr ""
+
+msgctxt "#30217"
+msgid "Reset ESN"
+msgstr ""
+
+msgctxt "#30218"
+msgid "Are you sure you want to reset the ESN?\r\nIf you confirm, wait until you receive the login message."
+msgstr ""
+
+msgctxt "#30219"
+msgid "Disable notification for synchronization completed"
+msgstr ""
+
+msgctxt "#30220"
+msgid "Kodi library is now synchronized with My list"
+msgstr ""
+
+msgctxt "#30221"
+msgid "Owner account"
+msgstr ""
+
+msgctxt "#30222"
+msgid "Kid account"
+msgstr ""
+
+msgctxt "#30223"
+msgid "You can start the synchronization only by selecting the owner profile"
 msgstr ""

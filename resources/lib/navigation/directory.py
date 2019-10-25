@@ -48,6 +48,9 @@ class DirectoryBuilder(object):
         """Show profiles listing"""
         # pylint: disable=unused-argument
         common.debug('Showing profiles listing')
+        if not api.update_profiles_data():
+            xbmcplugin.endOfDirectory(g.PLUGIN_HANDLE, succeeded=False)
+            return
         listings.build_profiles_listing()
         _handle_endofdirectory(False, False)
 
@@ -86,7 +89,7 @@ class DirectoryBuilder(object):
             mainmenu_data = menu_data['main_menu']
         if menu_data.get('request_context_name', None) and g.is_known_menu_context(pathitems[2]):
             listings.build_video_listing(
-                api.video_list_sorted(context_name=menu_data['request_context_name'],
+                api.video_list_sorted(menu_data['request_context_name'],
                                       perpetual_range_start=self.perpetual_range_start,
                                       menu_data=mainmenu_data),
                 menu_data, pathitems)
@@ -94,7 +97,7 @@ class DirectoryBuilder(object):
             # Dynamic IDs for common video lists
             list_id = None if pathitems[2] == 'None' else pathitems[2]
             listings.build_video_listing(
-                api.video_list_sorted(context_name=menu_data['request_context_name'],
+                api.video_list_sorted(menu_data['request_context_name'],
                                       context_id=list_id,
                                       perpetual_range_start=self.perpetual_range_start,
                                       menu_data=mainmenu_data),

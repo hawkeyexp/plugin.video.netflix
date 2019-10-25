@@ -30,12 +30,6 @@ def catch_api_errors(func):
     return api_error_wrapper
 
 
-def activate_profile(profile_id):
-    """Activate the profile with the given ID"""
-    if common.make_call('activate_profile', profile_id):
-        g.CACHE.invalidate()
-
-
 def logout():
     """Logout of the current account"""
     url = common.build_url(['root'], mode=g.MODE_DIRECTORY)
@@ -43,11 +37,12 @@ def logout():
     g.CACHE.invalidate()
 
 
-def login():
+def login(ask_credentials=True):
     """Perform a login"""
     g.CACHE.invalidate()
     try:
-        ui.ask_credentials()
+        if ask_credentials:
+            ui.ask_credentials()
         if not common.make_call('login'):
             # Login not validated
             # ui.show_notification(common.get_local_string(30009))
@@ -57,6 +52,17 @@ def login():
         # Aborted from user or leave an empty field
         ui.show_notification(common.get_local_string(30112))
         raise MissingCredentialsError
+
+
+def update_profiles_data():
+    """Fetch profiles data from website"""
+    return common.make_call('update_profiles_data')
+
+
+def activate_profile(profile_id):
+    """Activate the profile with the given ID"""
+    if common.make_call('activate_profile', profile_id):
+        g.CACHE.invalidate()
 
 
 @common.time_execution(immediate=False)
@@ -235,7 +241,8 @@ def supplemental_video_list(videoid, supplemental_type):
 @cache.cache_output(g, cache.CACHE_COMMON)
 def single_info(videoid):
     """Retrieve info for a single episode"""
-    if videoid.mediatype not in [common.VideoId.EPISODE, common.VideoId.MOVIE]:
+    if videoid.mediatype not in [common.VideoId.EPISODE, common.VideoId.MOVIE,
+                                 common.VideoId.SUPPLEMENTAL]:
         raise common.InvalidVideoId('Cannot request info for {}'
                                     .format(videoid))
     common.debug('Requesting info for {}'.format(videoid))
@@ -246,32 +253,40 @@ def single_info(videoid):
     return common.make_call('path_request', paths)
 
 
-def custom_video_list_basicinfo(list_id):
-    """Retrieve a single video list
+def custom_video_list_basicinfo(context_name):
+    """
+    Retrieve a single video list
     used only to know which videos are in my list without requesting additional information
     """
-    common.debug('Requesting custom video list basic info {}'.format(list_id))
-    paths = build_paths(['lists', list_id, RANGE_SELECTOR, 'reference'],
+    common.debug('Requesting custom video list basic info for {}'.format(context_name))
+    paths = build_paths([context_name, 'az', RANGE_SELECTOR],
                         VIDEO_LIST_BASIC_PARTIAL_PATHS)
     callargs = {
         'paths': paths,
-        'length_params': ['stdlist', ['lists', list_id]],
-        'perpetual_range_start': None
+        'length_params': ['stdlist', [context_name, 'az']],
+        'perpetual_range_start': None,
+        'no_limit_req': True
     }
     # When the list is empty the server returns an empty response
     path_response = common.make_call('perpetual_path_request', callargs)
-    return {} if not path_response else VideoList(path_response)
+    return {} if not path_response else VideoListSorted(path_response, context_name, None, 'az')
 
 
-@cache.cache_output(g, cache.CACHE_COMMON, fixed_identifier='my_list_items')
+# Custom ttl to mylist_items (ttl=10min*60)
+# We can not have the changes in real-time, if my-list is modified using other apps,
+# every 10 minutes will be updated with the new data
+# Never disable the cache to this function, it would cause plentiful requests to the service!
+@cache.cache_output(g, cache.CACHE_COMMON, fixed_identifier='my_list_items', ttl=600)
 def mylist_items():
     """Return a list of all the items currently contained in my list"""
     common.debug('Try to perform a request to get the id list of the videos in my list')
     try:
         items = []
-        videos = custom_video_list_basicinfo(list_id_for_type(g.MAIN_MENU_ITEMS['myList']['lolomo_contexts'][0]))
+        videos = custom_video_list_basicinfo(g.MAIN_MENU_ITEMS['myList']['request_context_name'])
         if videos:
-            items = [video_id for video_id, video in videos.videos.iteritems()
+            # pylint: disable=unused-variable
+            items = [common.VideoId.from_videolist_item(video)
+                     for video_id, video in videos.videos.iteritems()
                      if video['queue'].get('inQueue', False)]
         return items
     except InvalidVideoListTypeError:
@@ -312,13 +327,18 @@ def update_my_list(videoid, operation):
              'videoId': int(videoid_value)}})
     ui.show_notification(common.get_local_string(30119))
     try:
-        g.CACHE.invalidate_entry(cache.CACHE_COMMON, list_id_for_type('queue'))
-    except InvalidVideoListTypeError:
+        # This is necessary to have the my-list menu updated when you open it
+        if operation == 'remove':
+            # Delete item manually to speedup operations on page load
+            cached_video_list_sorted = g.CACHE.get(cache.CACHE_COMMON, 'mylist')
+            del cached_video_list_sorted.videos[videoid.value]
+        else:
+            # Force reload items on page load
+            g.CACHE.invalidate_entry(cache.CACHE_COMMON, 'mylist')
+    except cache.CacheMiss:
         pass
-    g.CACHE.invalidate_entry(cache.CACHE_COMMON, 'queue')
-    g.CACHE.invalidate_entry(cache.CACHE_COMMON, 'mylist')
+    # Invalidate my_list_items to allow reload updated my_list_items results when page refresh
     g.CACHE.invalidate_entry(cache.CACHE_COMMON, 'my_list_items')
-    g.CACHE.invalidate_entry(cache.CACHE_COMMON, 'root_lists')
 
 
 @common.time_execution(immediate=False)
