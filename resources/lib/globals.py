@@ -1,11 +1,18 @@
 # -*- coding: utf-8 -*-
-"""Global addon constants.
-Everything that is to be globally accessible must be defined in this module
-and initialized in GlobalVariables.init_globals.
-When reusing Kodi languageInvokers, only the code in the main module
-(addon.py or service.py) will be run every time the addon is called.
-All other code executed on module level will only be executed once, when
-the module is first imported on the first addon invocation."""
+"""
+    Copyright (C) 2017 Sebastian Golasch (plugin.video.netflix)
+    Copyright (C) 2018 Caphm (original implementation module)
+    Global addon constants
+
+    SPDX-License-Identifier: MIT
+    See LICENSES/MIT.md for more information.
+"""
+# Everything that is to be globally accessible must be defined in this module
+# and initialized in GlobalVariables.init_globals.
+# When reusing Kodi languageInvokers, only the code in the main module
+# (addon.py or service.py) will be run every time the addon is called.
+# All other code executed on module level will only be executed once, when
+# the module is first imported on the first addon invocation.
 from __future__ import absolute_import, division, unicode_literals
 
 import collections
@@ -22,9 +29,6 @@ from future.utils import iteritems
 
 import xbmc
 import xbmcaddon
-import xbmcvfs
-
-import resources.lib.cache as cache
 
 
 class GlobalVariables(object):
@@ -181,6 +185,11 @@ class GlobalVariables(object):
 
     def __init__(self):
         """Do nothing on constructing the object"""
+        # Define here any variables necessary for the correct loading of the modules
+        self.ADDON = None
+        self.ADDON_DATA_PATH = None
+        self.DATA_PATH = None
+        self.CACHE_METADATA_TTL = None
 
     def init_globals(self, argv, skip_database_initialize=False):
         """Initialized globally used module variables.
@@ -250,7 +259,7 @@ class GlobalVariables(object):
                 shared_db_class = db_shared.get_shareddb_class(force_sqlite=True)
                 self.SHARED_DB = shared_db_class()
 
-        self.settings_monitor_suspended(False)  # Reset the value in case of addon crash
+        self.settings_monitor_suspend(False)  # Reset the value in case of addon crash
 
         try:
             os.mkdir(self.DATA_PATH)
@@ -265,13 +274,15 @@ class GlobalVariables(object):
         # This is ugly: Pass the common module into Cache.__init__ to work
         # around circular import dependencies.
         import resources.lib.common as common
-        self.CACHE = cache.Cache(common, self.CACHE_PATH, self.CACHE_TTL,
-                                 self.CACHE_METADATA_TTL, self.PLUGIN_HANDLE)
+        from resources.lib.cache import Cache
+        self.CACHE = Cache(common, self.CACHE_PATH, self.CACHE_TTL,
+                           self.CACHE_METADATA_TTL, self.PLUGIN_HANDLE)
 
     def _init_filesystem_cache(self):
-        # pylint: disable=broad-except
-        for bucket in cache.BUCKET_NAMES:
-            xbmcvfs.mkdirs(xbmc.translatePath(os.path.join(self.CACHE_PATH, bucket)))
+        from xbmcvfs import mkdirs
+        from resources.lib.cache import BUCKET_NAMES
+        for bucket in BUCKET_NAMES:
+            mkdirs(xbmc.translatePath(os.path.join(self.CACHE_PATH, bucket)))
 
     def initial_addon_configuration(self):
         """
@@ -280,12 +291,12 @@ class GlobalVariables(object):
         """
         run_initial_config = self.ADDON.getSettingBool('run_init_configuration')
         if run_initial_config:
-            import resources.lib.common as common
-            import resources.lib.kodi.ui as ui
-            self.settings_monitor_suspended(True)
+            from resources.lib.common import (debug, get_system_platform, get_local_string)
+            from resources.lib.kodi.ui import (ask_for_confirmation, show_ok_dialog)
+            self.settings_monitor_suspend(True, False)
 
-            system = common.get_system_platform()
-            common.debug('Running initial addon configuration dialogs on system: {}', system)
+            system = get_system_platform()
+            debug('Running initial addon configuration dialogs on system: {}', system)
             if system in ['osx', 'ios', 'xbox']:
                 self.ADDON.setSettingBool('enable_vp9_profiles', False)
                 self.ADDON.setSettingBool('enable_hevc_profiles', True)
@@ -297,20 +308,18 @@ class GlobalVariables(object):
                 self.ADDON.setSettingBool('enable_hevc_profiles', False)
             elif system == 'android':
                 ultrahd_capable_device = False
-                premium_account = ui.ask_for_confirmation(common.get_local_string(30154),
-                                                          common.get_local_string(30155))
+                premium_account = ask_for_confirmation(get_local_string(30154),
+                                                       get_local_string(30155))
                 if premium_account:
-                    ultrahd_capable_device = ui.ask_for_confirmation(common.get_local_string(30154),
-                                                                     common.get_local_string(30156))
+                    ultrahd_capable_device = ask_for_confirmation(get_local_string(30154),
+                                                                  get_local_string(30156))
                 if ultrahd_capable_device:
-                    ui.show_ok_dialog(common.get_local_string(30154),
-                                      common.get_local_string(30157))
+                    show_ok_dialog(get_local_string(30154), get_local_string(30157))
                     ia_enabled = xbmc.getCondVisibility('System.HasAddon(inputstream.adaptive)')
                     if ia_enabled:
                         xbmc.executebuiltin('Addon.OpenSettings(inputstream.adaptive)')
                     else:
-                        ui.show_ok_dialog(common.get_local_string(30154),
-                                          common.get_local_string(30046))
+                        show_ok_dialog(get_local_string(30154), get_local_string(30046))
                     self.ADDON.setSettingBool('enable_vp9_profiles', False)
                     self.ADDON.setSettingBool('enable_hevc_profiles', True)
                 else:
@@ -328,28 +337,38 @@ class GlobalVariables(object):
                 self.ADDON.setSettingBool('enable_vp9_profiles', False)
                 self.ADDON.setSettingBool('enable_hevc_profiles', False)
             self.ADDON.setSettingBool('run_init_configuration', False)
-            self.settings_monitor_suspended(False)
+            self.settings_monitor_suspend(False)
 
-    def settings_monitor_suspended(self, suspend):
+    def settings_monitor_suspend(self, is_suspended=True, at_first_change=False):
         """
-        Suspends for the necessary time the settings monitor
-        that otherwise cause the reinitialization of global settings
-        and possible consequent actions to settings changes or unnecessary checks
+        Suspends for the necessary time the settings monitor of the service
+        that otherwise cause the reinitialization of global settings and possible consequent actions
+        to settings changes or unnecessary checks when a setting will be changed.
+        :param is_suspended: True/False - allows or denies the execution of the settings monitor
+        :param at_first_change:
+         True - monitor setting is automatically reactivated after the FIRST change to the settings
+         False - monitor setting MUST BE REACTIVATED MANUALLY
+        :return: None
         """
-        is_suspended = g.LOCAL_DB.get_value('suspend_settings_monitor', False)
-        if (is_suspended and suspend) or (not is_suspended and not suspend):
+        if is_suspended and at_first_change:
+            new_value = 'First'
+        else:
+            new_value = str(is_suspended)
+        # Accepted values in string: First, True, False
+        current_value = g.LOCAL_DB.get_value('suspend_settings_monitor', 'False')
+        if new_value == current_value:
             return
-        g.LOCAL_DB.set_value('suspend_settings_monitor', suspend)
+        g.LOCAL_DB.set_value('suspend_settings_monitor', new_value)
 
-    def settings_monitor_is_suspended(self):
+    def settings_monitor_suspend_status(self):
         """
-        Returns True when the setting monitor must be suspended
+        Returns the suspend status of settings monitor
         """
-        return g.LOCAL_DB.get_value('suspend_settings_monitor', False)
+        return g.LOCAL_DB.get_value('suspend_settings_monitor', 'False')
 
     def get_esn(self):
         """Get the generated esn or if set get the custom esn"""
-        from resources.lib.database.db_utils import (TABLE_SESSION)
+        from resources.lib.database.db_utils import TABLE_SESSION
         custom_esn = g.ADDON.getSetting('esn')
         return custom_esn if custom_esn else g.LOCAL_DB.get_value('esn', table=TABLE_SESSION)
 
@@ -366,9 +385,8 @@ class GlobalVariables(object):
         for _ in range(0, 30):
             esn.append(random.choice(possible))
         edge_esn = ''.join(esn)
-        self.settings_monitor_suspended(True)
+        self.settings_monitor_suspend(True)
         self.ADDON.setSetting('edge_esn', edge_esn)
-        self.settings_monitor_suspended(False)
         return edge_esn
 
     def is_known_menu_context(self, context):
@@ -415,7 +433,7 @@ class GlobalVariables(object):
 # pylint: disable=invalid-name
 # This will have no effect most of the time, as it doesn't seem to be executed
 # on subsequent addon invocations when reuseLanguageInvoker is being used.
-# We initialize an empty instance so the instance is importable from addon.py
-# and service.py, where g.init_globals(sys.argv) MUST be called before doing
+# We initialize an empty instance so the instance is importable from run_addon.py
+# and run_service.py, where g.init_globals(sys.argv) MUST be called before doing
 # anything else (even BEFORE OTHER IMPORTS from this addon)
 g = GlobalVariables()

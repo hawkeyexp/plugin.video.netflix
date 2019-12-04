@@ -1,5 +1,12 @@
 # -*- coding: utf-8 -*-
-"""Helper functions for logging"""
+"""
+    Copyright (C) 2017 Sebastian Golasch (plugin.video.netflix)
+    Copyright (C) 2018 Caphm (original implementation module)
+    Helper functions for logging
+
+    SPDX-License-Identifier: MIT
+    See LICENSES/MIT.md for more information.
+"""
 from __future__ import absolute_import, division, unicode_literals
 from functools import wraps
 from future.utils import iteritems
@@ -20,6 +27,8 @@ def get_log_level():
     if __LOG_LEVEL__ is None:
         try:
             __LOG_LEVEL__ = g.ADDON.getSettingString('debug_log_level')
+            if __LOG_LEVEL__ != 'Disabled':
+                _log('Debug logging level is {}'.format(__LOG_LEVEL__), xbmc.LOGINFO)
         except Exception:  # pylint: disable=broad-except
             # If settings.xml was not created yet, as at first service run
             # g.ADDON.getSettingString('debug_log_level') will thrown a TypeError

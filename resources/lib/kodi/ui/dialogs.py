@@ -1,5 +1,12 @@
 # -*- coding: utf-8 -*-
-"""Various simple dialogs"""
+"""
+    Copyright (C) 2017 Sebastian Golasch (plugin.video.netflix)
+    Copyright (C) 2018 Caphm (original implementation module)
+    Various simple dialogs
+
+    SPDX-License-Identifier: MIT
+    See LICENSES/MIT.md for more information.
+"""
 # pylint: disable=wildcard-import
 from __future__ import absolute_import, division, unicode_literals
 
@@ -25,20 +32,25 @@ def ask_credentials():
     """
     Show some dialogs and ask the user for account credentials
     """
-    email = xbmcgui.Dialog().input(
+    email = g.py2_decode(xbmcgui.Dialog().input(
         heading=common.get_local_string(30005),
-        type=xbmcgui.INPUT_ALPHANUM) or None
+        type=xbmcgui.INPUT_ALPHANUM)) or None
     common.verify_credentials(email)
-    password = xbmcgui.Dialog().input(
-        heading=common.get_local_string(30004),
-        type=xbmcgui.INPUT_ALPHANUM,
-        option=xbmcgui.ALPHANUM_HIDE_INPUT) or None
+    password = ask_for_password()
     common.verify_credentials(password)
     common.set_credentials(email, password)
     return {
         'email': email,
         'password': password
     }
+
+
+def ask_for_password():
+    """Ask the user for the password"""
+    return g.py2_decode(xbmcgui.Dialog().input(
+        heading=common.get_local_string(30004),
+        type=xbmcgui.INPUT_ALPHANUM,
+        option=xbmcgui.ALPHANUM_HIDE_INPUT)) or None
 
 
 def ask_for_rating():
@@ -99,6 +111,10 @@ def show_backend_not_ready():
 
 def show_ok_dialog(title, message):
     return xbmcgui.Dialog().ok(title, message)
+
+
+def show_yesno_dialog(title, message, yeslabel=None, nolabel=None):
+    return xbmcgui.Dialog().yesno(title, message, yeslabel=yeslabel, nolabel=nolabel)
 
 
 def show_error_info(title, message, unknown_error=False, netflix_error=False):

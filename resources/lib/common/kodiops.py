@@ -1,5 +1,12 @@
 # -*- coding: utf-8 -*-
-"""Helper functions for Kodi operations"""
+"""
+    Copyright (C) 2017 Sebastian Golasch (plugin.video.netflix)
+    Copyright (C) 2018 Caphm (original implementation module)
+    Helper functions for Kodi operations
+
+    SPDX-License-Identifier: MIT
+    See LICENSES/MIT.md for more information.
+"""
 from __future__ import absolute_import, division, unicode_literals
 
 import json
@@ -197,3 +204,35 @@ def _adjust_locale(locale_code, lang_code_without_country_exists):
 
     debug('AdjustLocale - missing mapping conversion for locale: {}'.format(locale_code))
     return locale_code
+
+
+def is_internet_connected():
+    """
+    Check internet status
+    :return: True if connected
+    """
+    if not xbmc.getCondVisibility('System.InternetState'):
+        # Double check when Kodi say that it is not connected
+        # i'm not sure the InfoLabel will work properly when Kodi was started a few seconds ago
+        # using getInfoLabel instead of getCondVisibility often return delayed results..
+        return _check_internet()
+    return True
+
+
+def _check_internet():
+    """
+    Checks via socket if the internet works (in about 0,7sec with no timeout error)
+    :return: True if connected
+    """
+    import socket
+    for timeout in [1, 1]:
+        try:
+            socket.setdefaulttimeout(timeout)
+            host = socket.gethostbyname("www.google.com")
+            s = socket.create_connection((host, 80), timeout)
+            s.close()
+            return True
+        except Exception:  # pylint: disable=broad-except
+            # Error when is not reachable
+            pass
+    return False

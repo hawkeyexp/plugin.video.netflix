@@ -1,5 +1,12 @@
 # -*- coding: utf-8 -*-
-"""Checks when settings are changed"""
+"""
+    Copyright (C) 2017 Sebastian Golasch (plugin.video.netflix)
+    Copyright (C) 2019 Stefano Gottardo (original implementation module)
+    Checks when settings are changed
+
+    SPDX-License-Identifier: MIT
+    See LICENSES/MIT.md for more information.
+"""
 from __future__ import absolute_import, division, unicode_literals
 import sys
 from future.utils import iteritems
@@ -22,8 +29,15 @@ class SettingsMonitor(xbmc.Monitor):
         xbmc.Monitor.__init__(self)
 
     def onSettingsChanged(self):
-        if not g.settings_monitor_is_suspended():
-            self._on_change()
+        status = g.settings_monitor_suspend_status()
+        if status == 'First':
+            common.warn('SettingsMonitor: triggered but in suspend status (at first change)')
+            g.settings_monitor_suspend(False)
+            return
+        if status == 'True':
+            common.warn('SettingsMonitor: triggered but in suspend status (permanent)')
+            return
+        self._on_change()
 
     def _on_change(self):
         common.reset_log_level_global_var()

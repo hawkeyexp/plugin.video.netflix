@@ -1,5 +1,12 @@
 # -*- coding: utf-8 -*-
-"""Kodi library integration"""
+"""
+    Copyright (C) 2017 Sebastian Golasch (plugin.video.netflix)
+    Copyright (C) 2018 Caphm (original implementation module)
+    Kodi library integration
+
+    SPDX-License-Identifier: MIT
+    See LICENSES/MIT.md for more information.
+"""
 from __future__ import absolute_import, division, unicode_literals
 
 import os
@@ -735,7 +742,7 @@ def _sync_mylist(videoid, task_handler, enabled):
     operation = {
         'export_item': 'add',
         'remove_item': 'remove'}.get(task_handler.__name__)
-    if enabled and operation and g.ADDON.getSettingBool('mylist_library_sync'):
+    if enabled and operation and g.ADDON.getSettingBool('lib_sync_mylist'):
         common.info('Syncing my list due to change of Kodi library')
         api.update_my_list(videoid, operation)
 

@@ -1,5 +1,12 @@
 # -*- coding: utf-8 -*-
-"""Playback tracking and coordination of several actions during playback"""
+"""
+    Copyright (C) 2017 Sebastian Golasch (plugin.video.netflix)
+    Copyright (C) 2018 Caphm (original implementation module)
+    Playback tracking and coordination of several actions during playback
+
+    SPDX-License-Identifier: MIT
+    See LICENSES/MIT.md for more information.
+"""
 from __future__ import absolute_import, division, unicode_literals
 
 import json
@@ -76,7 +83,10 @@ class PlaybackController(xbmc.Monitor):
                                  player_state)
 
     def _on_playback_started(self, data):
-        self.active_player_id = max(data['player']['playerid'], 1)
+        # When UpNext addon play a video while we are inside Netflix addon and
+        # not externally like Kodi library, the playerid become -1 this id does not exist
+        player_id = data['player']['playerid'] if data['player']['playerid'] > -1 else 1
+        self.active_player_id = player_id
         self._notify_all(PlaybackActionManager.on_playback_started,
                          self._get_player_state())
 

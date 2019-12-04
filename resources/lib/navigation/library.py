@@ -1,5 +1,12 @@
 # -*- coding: utf-8 -*-
-"""Navigation handler for library actions"""
+"""
+    Copyright (C) 2017 Sebastian Golasch (plugin.video.netflix)
+    Copyright (C) 2018 Caphm (original implementation module)
+    Navigation handler for library actions
+
+    SPDX-License-Identifier: MIT
+    See LICENSES/MIT.md for more information.
+"""
 from __future__ import absolute_import, division, unicode_literals
 
 import resources.lib.common as common
@@ -103,7 +110,7 @@ class LibraryActionExecutor(object):
         and if set also synchronize the Netflix "My List" with the Kodi library
         """
         # Executed by the service in the library_updater module
-        library.auto_update_library(True, True)
+        library.auto_update_library(g.ADDON.getSettingBool('lib_sync_mylist'), True)
 
     def _get_mylist_profile_guid(self):
         return g.SHARED_DB.get_value('sync_mylist_profile_guid',

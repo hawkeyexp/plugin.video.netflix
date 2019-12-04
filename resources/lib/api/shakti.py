@@ -1,5 +1,12 @@
 # -*- coding: utf-8 -*-
-"""Access to Netflix's Shakti API"""
+"""
+    Copyright (C) 2017 Sebastian Golasch (plugin.video.netflix)
+    Copyright (C) 2018 Caphm (original implementation module)
+    Access to Netflix's Shakti API
+
+    SPDX-License-Identifier: MIT
+    See LICENSES/MIT.md for more information.
+"""
 from __future__ import absolute_import, division, unicode_literals
 from functools import wraps
 from future.utils import iteritems
@@ -51,7 +58,7 @@ def login(ask_credentials=True):
     except MissingCredentialsError:
         # Aborted from user or leave an empty field
         ui.show_notification(common.get_local_string(30112))
-        raise MissingCredentialsError
+        raise
 
 
 def update_profiles_data():
@@ -150,13 +157,14 @@ def video_list_sorted(context_name, context_id=None, perpetual_range_start=None,
 
 
 @common.time_execution(immediate=False)
-def custom_video_list(video_ids):
+def custom_video_list(video_ids, custom_paths=None):
     """Retrieve a video list which contains the videos specified by
     video_ids"""
     common.debug('Requesting custom video list with {} videos', len(video_ids))
     return CustomVideoList(common.make_call(
         'path_request',
-        build_paths(['videos', video_ids], VIDEO_LIST_PARTIAL_PATHS)))
+        build_paths(['videos', video_ids],
+                    custom_paths if custom_paths else VIDEO_LIST_PARTIAL_PATHS)))
 
 
 @common.time_execution(immediate=False)
@@ -331,10 +339,33 @@ def rate(videoid, rating):
     common.make_call(
         'post',
         {'component': 'set_video_rating',
-         'params': {
-             'titleid': videoid.value,
+         'data': {
+             'titleId': int(videoid.value),
              'rating': rating}})
     ui.show_notification(common.get_local_string(30127).format(rating * 2))
+
+
+@catch_api_errors
+@common.time_execution(immediate=False)
+def rate_thumb(videoid, rating, track_id_jaw):
+    """Rate a video on Netflix"""
+    common.debug('Thumb rating {} as {}', videoid.value, rating)
+    event_uuid = common.get_random_uuid()
+    response = common.make_call(
+        'post',
+        {'component': 'set_thumb_rating',
+         'data': {
+             'eventUuid': event_uuid,
+             'titleId': int(videoid.value),
+             'trackId': track_id_jaw,
+             'rating': rating,
+         }})
+    if response.get('status', '') == 'success':
+        ui.show_notification(common.get_local_string(30045).split('|')[rating])
+    else:
+        common.error('Rating thumb error, response detail: {}', response)
+        ui.show_error_info('Rating error', 'Error type: {}' + response.get('status', '--'),
+                           True, True)
 
 
 @catch_api_errors
@@ -440,16 +471,36 @@ def search(search_term, perpetual_range_start=None):
 
 
 @common.time_execution(immediate=False)
-def verify_pin(pin):
-    """Send adult PIN to Netflix and verify it."""
-    # pylint: disable=broad-except
+def get_parental_control_data(password):
+    """Get the parental control data"""
+    return common.make_call('parental_control_data', {'password': password})
+
+
+@common.time_execution(immediate=False)
+def set_parental_control_data(data):
+    """Set the parental control data"""
     try:
         return common.make_call(
             'post',
-            {'component': 'adult_pin',
-             'data': {
-                 'pin': pin}}).get('success', False)
-    except Exception:
+            {'component': 'pin_service',
+             'data': {'maturityLevel': data['maturity_level'],
+                      'password': common.get_credentials().get('password'),
+                      'pin': data['pin']}}
+        )
+    except Exception:  # pylint: disable=broad-except
+        return {}
+
+
+@common.time_execution(immediate=False)
+def verify_pin(pin):
+    """Send adult PIN to Netflix and verify it."""
+    try:
+        return common.make_call(
+            'post',
+            {'component': 'pin_service',
+             'data': {'pin': pin}}
+        ).get('success', False)
+    except Exception:  # pylint: disable=broad-except
         return False
 
 
