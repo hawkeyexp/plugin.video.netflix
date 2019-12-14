@@ -119,16 +119,14 @@ class GlobalVariables(object):
                              'lolomo_known': False,
                              'label_id': 30001,
                              'description_id': 30094,
-                             'icon': 'DefaultUser.png',
-                             'content_type': CONTENT_FOLDER}),
+                             'icon': 'DefaultUser.png'}),
         ('tvshowsGenres', {'path': ['subgenres', 'tvshowsGenres', '83'],
                            'lolomo_contexts': None,
                            'lolomo_known': False,
                            'request_context_name': 'genres',  # Used for sub-menus
                            'label_id': 30174,
                            'description_id': None,
-                           'icon': 'DefaultTVShows.png',
-                           'content_type': CONTENT_FOLDER}),
+                           'icon': 'DefaultTVShows.png'}),
         ('moviesGenres', {'path': ['subgenres', 'moviesGenres', '34399'],
                           'lolomo_contexts': None,
                           'lolomo_known': False,
@@ -136,15 +134,14 @@ class GlobalVariables(object):
                           'label_id': 30175,
                           'description_id': None,
                           'icon': 'DefaultMovies.png',
-                          'content_type': CONTENT_FOLDER}),
+                          'content_type': CONTENT_MOVIE}),
         ('tvshows', {'path': ['genres', 'tvshows', '83'],
                      'lolomo_contexts': None,
                      'lolomo_known': False,
                      'request_context_name': 'genres',  # Used for sub-menus
                      'label_id': 30095,
                      'description_id': None,
-                     'icon': 'DefaultTVShows.png',
-                     'content_type': CONTENT_FOLDER}),
+                     'icon': 'DefaultTVShows.png'}),
         ('movies', {'path': ['genres', 'movies', '34399'],
                     'lolomo_contexts': None,
                     'lolomo_known': False,
@@ -152,15 +149,14 @@ class GlobalVariables(object):
                     'label_id': 30096,
                     'description_id': None,
                     'icon': 'DefaultMovies.png',
-                    'content_type': CONTENT_FOLDER}),
+                    'content_type': CONTENT_MOVIE}),
         ('genres', {'path': ['genres', 'genres'],
                     'lolomo_contexts': ['genre'],
                     'lolomo_known': False,
                     'request_context_name': 'genres',  # Used for sub-menus
                     'label_id': 30010,
                     'description_id': 30093,
-                    'icon': 'DefaultGenre.png',
-                    'content_type': CONTENT_FOLDER}),
+                    'icon': 'DefaultGenre.png'}),
         ('search', {'path': ['search', 'search'],
                     'lolomo_contexts': None,
                     'lolomo_known': False,
@@ -240,24 +236,7 @@ class GlobalVariables(object):
         self.IPC_OVER_HTTP = self.ADDON.getSettingBool('enable_ipc_over_http')
 
         if not skip_database_initialize:
-            # Initialize local database
-            import resources.lib.database.db_local as db_local
-            self.LOCAL_DB = db_local.NFLocalDatabase()
-            # Initialize shared database
-            import resources.lib.database.db_shared as db_shared
-            from resources.lib.database.db_exceptions import MySQLConnectionError
-            try:
-                shared_db_class = db_shared.get_shareddb_class()
-                self.SHARED_DB = shared_db_class()
-            except MySQLConnectionError:
-                # The MySQL database cannot be reached, fallback to local SQLite database
-                # When this code is called from addon, is needed apply the change also in the
-                # service, so disabling it run the SettingsMonitor
-                import resources.lib.kodi.ui as ui
-                self.ADDON.setSettingBool('use_mysql', False)
-                ui.show_notification(self.ADDON.getLocalizedString(30206), time=10000)
-                shared_db_class = db_shared.get_shareddb_class(force_sqlite=True)
-                self.SHARED_DB = shared_db_class()
+            self._init_database()
 
         self.settings_monitor_suspend(False)  # Reset the value in case of addon crash
 
@@ -267,6 +246,26 @@ class GlobalVariables(object):
             pass
 
         self._init_cache()
+
+    def _init_database(self):
+        # Initialize local database
+        import resources.lib.database.db_local as db_local
+        self.LOCAL_DB = db_local.NFLocalDatabase()
+        # Initialize shared database
+        import resources.lib.database.db_shared as db_shared
+        from resources.lib.database.db_exceptions import MySQLConnectionError
+        try:
+            shared_db_class = db_shared.get_shareddb_class()
+            self.SHARED_DB = shared_db_class()
+        except MySQLConnectionError:
+            # The MySQL database cannot be reached, fallback to local SQLite database
+            # When this code is called from addon, is needed apply the change also in the
+            # service, so disabling it run the SettingsMonitor
+            import resources.lib.kodi.ui as ui
+            self.ADDON.setSettingBool('use_mysql', False)
+            ui.show_notification(self.ADDON.getLocalizedString(30206), time=10000)
+            shared_db_class = db_shared.get_shareddb_class(force_sqlite=True)
+            self.SHARED_DB = shared_db_class()
 
     def _init_cache(self):
         if not os.path.exists(g.py2_decode(xbmc.translatePath(self.CACHE_PATH))):

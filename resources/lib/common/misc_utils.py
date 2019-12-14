@@ -109,7 +109,7 @@ def get_user_agent():
         return base.replace('%PL%', '(Macintosh; Intel Mac OS X 10_14_6)')
     # Windows
     if system == 'Windows':
-        return base.replace('%PL%', '(Windows NT 6.1; WOW64)')
+        return base.replace('%PL%', '(Windows NT 10; Win64; x64)')
     # ARM based Linux
     if platform.machine().startswith('arm'):
         # Last number is the platform version of Chrome OS
@@ -234,6 +234,15 @@ def merge_dicts(dict_to_merge, merged_dict):
         else:
             merged_dict[key] = value
     return merged_dict
+
+
+def compare_dicts(dict_a, dict_b, excluded_keys=None):
+    """
+    Compare two dict with same keys, with optional keys to exclude from compare
+    """
+    if excluded_keys is None:
+        excluded_keys = []
+    return all(dict_a[k] == dict_b[k] for k in dict_a if k not in excluded_keys)
 
 
 def any_value_except(mapping, excluded_keys):
