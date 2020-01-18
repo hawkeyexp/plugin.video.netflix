@@ -10,25 +10,28 @@
 """
 # Must not be used within these modules, because stale values may
 # be used and cause inconsistencies:
-# resources.lib.self.common
 # resources.lib.services
 # resources.lib.kodi.ui
 # resources.lib.services.nfsession
 from __future__ import absolute_import, division, unicode_literals
+
 import os
-import sys
-from time import time
 from functools import wraps
+from time import time
+
 from future.utils import iteritems
+
+import xbmc
+import xbmcgui
+import xbmcvfs
+
+from resources.lib import common
+from resources.lib.globals import g
 
 try:
     import cPickle as pickle
 except ImportError:
     import pickle
-
-import xbmc
-import xbmcgui
-import xbmcvfs
 
 try:  # Python 2
     unicode
@@ -71,7 +74,7 @@ class UnknownCacheBucketError(Exception):
 #                               get the value from the func arguments
 # fixed_identifier - note if specified all other params are ignored
 
-def cache_output(g, bucket, fixed_identifier=None,
+def cache_output(bucket, fixed_identifier=None,
                  identify_from_kwarg_name='videoid',
                  identify_append_from_kwarg_name=None,
                  identify_fallback_arg_index=0,
@@ -105,7 +108,6 @@ def cache_output(g, bucket, fixed_identifier=None,
 def _get_identifier(fixed_identifier, identify_from_kwarg_name,
                     identify_append_from_kwarg_name, identify_fallback_arg_index, args, kwargs):
     """Return the identifier to use with the caching_decorator"""
-    # import resources.lib.common as common
     # common.debug('Get_identifier args: {}', args)
     # common.debug('Get_identifier kwargs: {}', kwargs)
     if fixed_identifier:
@@ -150,18 +152,13 @@ def _get_identifier(fixed_identifier, identify_from_kwarg_name,
 
 
 class Cache(object):
-    def __init__(self, common, cache_path, ttl, metadata_ttl, plugin_handle):
-        # pylint: disable=too-many-arguments
-        # We have the self.common module injected as a dependency to work
-        # around circular dependencies with gloabl variable initialization
-        self.common = common
+    def __init__(self, cache_path, plugin_handle):
         self.plugin_handle = plugin_handle
         self.cache_path = cache_path
-        self.ttl = ttl
-        self.metadata_ttl = metadata_ttl
         self.buckets = {}
-        self.window = xbmcgui.Window(10000)
-        self.PY_IS_VER2 = sys.version_info.major == 2
+        self.window = xbmcgui.Window(10000)  # Kodi home window
+        # If you use multiple Kodi profiles you need to distinguish the cache of the current profile
+        self.properties_prefix = common.get_current_kodi_profile_name()
 
     def lock_marker(self):
         """Return a lock marker for this instance and the current time"""
@@ -186,7 +183,7 @@ class Cache(object):
         """Add an item to a cache bucket"""
         # pylint: disable=too-many-arguments
         if not eol:
-            eol = int(time() + (ttl if ttl else self.ttl))
+            eol = int(time() + (ttl if ttl else g.CACHE_TTL))
         # self.common.debug('Adding {} to {} (valid until {})',
         #                   identifier, bucket, eol)
         cache_entry = {'eol': eol, 'content': content}
@@ -197,41 +194,39 @@ class Cache(object):
 
     def commit(self):
         """Persist cache contents in window properties"""
-        # pylint: disable=global-statement
         for bucket, contents in iteritems(self.buckets):
             self._persist_bucket(bucket, contents)
             # The self.buckets dict survives across addon invocations if the
             # same languageInvoker thread is being used so we MUST clear its
             # contents to allow cache consistency between instances
             # del self.buckets[bucket]
-        self.common.debug('Cache commit successful')
+        common.debug('Cache commit successful')
 
     def invalidate(self, on_disk=False, bucket_names=None):
         """Clear all cache buckets"""
-        # pylint: disable=global-statement
         if not bucket_names:
             bucket_names = BUCKET_NAMES
         for bucket in bucket_names:
-            self.window.clearProperty(_window_property(bucket))
+            self.window.clearProperty(self._window_property(bucket))
             if bucket in self.buckets:
                 del self.buckets[bucket]
 
         if on_disk:
             self._invalidate_on_disk(bucket_names)
-        self.common.info('Cache invalidated')
+        common.info('Cache invalidated')
 
     def _invalidate_on_disk(self, bucket_names):
         for bucket in bucket_names:
-            self.common.delete_folder_contents(
+            common.delete_folder_contents(
                 os.path.join(self.cache_path, bucket))
 
     def invalidate_entry(self, bucket, identifier, on_disk=False):
         """Remove an item from a bucket"""
         try:
             self._purge_entry(bucket, identifier, on_disk)
-            self.common.debug('Invalidated {} in {}', identifier, bucket)
+            common.debug('Invalidated {} in {}', identifier, bucket)
         except KeyError:
-            self.common.debug('Nothing to invalidate, {} was not in {}', identifier, bucket)
+            common.debug('Nothing to invalidate, {} was not in {}', identifier, bucket)
 
     def _get_bucket(self, key):
         """Get a cache bucket.
@@ -245,32 +240,32 @@ class Cache(object):
     def _load_bucket(self, bucket):
         # Try 10 times to acquire a lock
         for _ in range(1, 10):
-            wnd_property_data = self.window.getProperty(_window_property(bucket))
+            wnd_property_data = self.window.getProperty(self._window_property(bucket))
             if wnd_property_data.startswith(str('LOCKED_BY_')):
-                self.common.debug('Waiting for release of {}', bucket)
+                common.debug('Waiting for release of {}', bucket)
                 xbmc.sleep(50)
             else:
                 return self._load_bucket_from_wndprop(bucket, wnd_property_data)
-        self.common.warn('{} is locked. Working with an empty instance...', bucket)
+        common.warn('{} is locked. Working with an empty instance...', bucket)
         return {}
 
     def _load_bucket_from_wndprop(self, bucket, wnd_property_data):
         try:
-            if self.PY_IS_VER2:
+            if g.PY_IS_VER2:
                 # pickle.loads on py2 wants string
                 bucket_instance = pickle.loads(wnd_property_data)
             else:
                 bucket_instance = pickle.loads(wnd_property_data.encode('latin-1'))
         except Exception:  # pylint: disable=broad-except
             # When window.getProperty does not have the property here happen an error
-            self.common.debug('No instance of {} found. Creating new instance.'.format(bucket))
+            common.debug('No instance of {} found. Creating new instance.'.format(bucket))
             bucket_instance = {}
         self._lock(bucket)
-        self.common.debug('Acquired lock on {}', bucket)
+        common.debug('Acquired lock on {}', bucket)
         return bucket_instance
 
     def _lock(self, bucket):
-        self.window.setProperty(_window_property(bucket), self.lock_marker())
+        self.window.setProperty(self._window_property(bucket), self.lock_marker())
 
     def _get_from_disk(self, bucket, identifier):
         """Load a cache entry from disk and add it to the in memory bucket"""
@@ -279,13 +274,13 @@ class Cache(object):
             raise CacheMiss()
         handle = xbmcvfs.File(cache_filename, 'rb')
         try:
-            if self.PY_IS_VER2:
+            if g.PY_IS_VER2:
                 # pickle.loads on py2 wants string
                 return pickle.loads(handle.read())
             # py3
             return pickle.loads(handle.readBytes())
         except Exception as exc:
-            self.common.error('Failed get cache from disk {}: {}', cache_filename, exc)
+            common.error('Failed get cache from disk {}: {}', cache_filename, exc)
             raise CacheMiss()
         finally:
             handle.close()
@@ -298,7 +293,7 @@ class Cache(object):
             # return pickle.dump(cache_entry, handle)
             handle.write(bytearray(pickle.dumps(cache_entry)))
         except Exception as exc:  # pylint: disable=broad-except
-            self.common.error('Failed to write cache entry to {}: {}', cache_filename, exc)
+            common.error('Failed to write cache entry to {}: {}', cache_filename, exc)
         finally:
             handle.close()
 
@@ -308,31 +303,31 @@ class Cache(object):
 
     def _persist_bucket(self, bucket, contents):
         if not self.is_safe_to_persist(bucket):
-            self.common.warn(
+            common.warn(
                 '{} is locked by another instance. Discarding changes'
                 .format(bucket))
             return
         try:
-            if self.PY_IS_VER2:
-                self.window.setProperty(_window_property(bucket), pickle.dumps(contents))
+            if g.PY_IS_VER2:
+                self.window.setProperty(self._window_property(bucket), pickle.dumps(contents))
             else:
                 # Note: On python 3 pickle.dumps produces byte not str cannot be passed as is in
                 # setProperty because cannot receive arbitrary byte sequences if they contain
                 # null bytes \x00, the stored value will be truncated by this null byte (Kodi bug).
                 # To store pickled data in Python 3, you should use protocol 0 explicitly and decode
                 # the resulted value with latin-1 encoding to str and then pass it to setPropety.
-                self.window.setProperty(_window_property(bucket),
+                self.window.setProperty(self._window_property(bucket),
                                         pickle.dumps(contents, protocol=0).decode('latin-1'))
         except Exception as exc:  # pylint: disable=broad-except
-            self.common.error('Failed to persist {} to wnd properties: {}', bucket, exc)
-            self.window.clearProperty(_window_property(bucket))
+            common.error('Failed to persist {} to wnd properties: {}', bucket, exc)
+            self.window.clearProperty(self._window_property(bucket))
         finally:
-            self.common.debug('Released lock on {}', bucket)
+            common.debug('Released lock on {}', bucket)
 
     def is_safe_to_persist(self, bucket):
         # Only persist if we acquired the original lock or if the lock is older
         # than 15 seconds (override stale locks)
-        lock_data = self.window.getProperty(_window_property(bucket))
+        lock_data = self.window.getProperty(self._window_property(bucket))
         if lock_data.startswith(str('LOCKED_BY_')):
             # Eg. LOCKED_BY_0001_AT_1574951301
             # Check if is same add-on invocation: 'LOCKED_BY_0001'
@@ -343,7 +338,7 @@ class Cache(object):
             except ValueError:
                 is_stale_lock = False
             if is_stale_lock:
-                self.common.info('Overriding stale cache lock {} on {}', lock_data, bucket)
+                common.info('Overriding stale cache lock {} on {}', lock_data, bucket)
             return is_own_lock or is_stale_lock
         return True
 
@@ -351,8 +346,7 @@ class Cache(object):
         """Verify if cache_entry has reached its EOL.
         Remove from in-memory and disk cache if so and raise CacheMiss"""
         if cache_entry['eol'] < int(time()):
-            self.common.debug('Cache entry {} in {} has expired => cache miss',
-                              identifier, bucket)
+            common.debug('Cache entry {} in {} has expired => cache miss', identifier, bucket)
             self._purge_entry(bucket, identifier)
             raise CacheMiss()
 
@@ -372,6 +366,5 @@ class Cache(object):
         if cache_exixts:
             os.remove(cache_filename)
 
-
-def _window_property(bucket):
-    return 'nfmemcache_{}'.format(bucket)
+    def _window_property(self, bucket):
+        return g.py2_encode('nfmemcache_{}_{}'.format(self.properties_prefix, bucket))

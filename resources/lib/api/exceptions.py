@@ -31,8 +31,8 @@ class InvalidAuthURLError(WebsiteParsingError):
     """The authURL is invalid"""
 
 
-class InvalidProfilesError(WebsiteParsingError):
-    """Cannot extract profiles from Netflix webpage"""
+class InvalidProfilesError(Exception):
+    """Cannot get profiles data from Netflix"""
 
 
 class InvalidMembershipStatusError(WebsiteParsingError):
@@ -58,3 +58,7 @@ class APIError(Exception):
 
 class NotConnected(Exception):
     """Internet status not connected"""
+
+
+class MetadataNotAvailable(Exception):
+    """Metadata not found"""

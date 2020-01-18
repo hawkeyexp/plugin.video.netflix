@@ -22,7 +22,9 @@ from .paths import (VIDEO_LIST_PARTIAL_PATHS, VIDEO_LIST_BASIC_PARTIAL_PATHS,
                     SEASONS_PARTIAL_PATHS, EPISODES_PARTIAL_PATHS, ART_PARTIAL_PATHS,
                     GENRE_PARTIAL_PATHS, RANGE_SELECTOR, MAX_PATH_REQUEST_SIZE,
                     TRAILER_PARTIAL_PATHS)
-from .exceptions import (InvalidVideoListTypeError, APIError, MissingCredentialsError)
+from .exceptions import (InvalidVideoListTypeError, APIError, MissingCredentialsError,
+                         MetadataNotAvailable)
+from .website import parse_profiles
 
 
 def catch_api_errors(func):
@@ -61,8 +63,14 @@ def login(ask_credentials=True):
 
 
 def update_profiles_data():
-    """Fetch profiles data from website"""
-    return common.make_call('update_profiles_data')
+    """Update the profiles list data to the database"""
+    profiles_data = common.make_call(
+        'path_request',
+        [['profilesList', 'summary'], ['profilesList', 'current', 'summary'],
+         ['profilesList', {'to': 5}, 'summary'], ['profilesList', {'to': 5},
+                                                  'avatar', 'images', 'byWidth', 320],
+         ['lolomo']])
+    parse_profiles(profiles_data)
 
 
 def activate_profile(profile_id):
@@ -72,7 +80,7 @@ def activate_profile(profile_id):
 
 
 @common.time_execution(immediate=False)
-@cache.cache_output(g, cache.CACHE_COMMON, fixed_identifier='root_lists')
+@cache.cache_output(cache.CACHE_COMMON, fixed_identifier='root_lists')
 def root_lists():
     """Retrieve initial video lists to display on homepage"""
     common.debug('Requesting root lists from API')
@@ -93,7 +101,7 @@ def root_lists():
                     ART_PARTIAL_PATHS)))
 
 
-@cache.cache_output(g, cache.CACHE_COMMON, identify_from_kwarg_name='list_type')
+@cache.cache_output(cache.CACHE_COMMON, identify_from_kwarg_name='list_type')
 def list_id_for_type(list_type):
     """Return the dynamic video list ID for a video list of known type"""
     try:
@@ -107,7 +115,7 @@ def list_id_for_type(list_type):
 
 
 @common.time_execution(immediate=False)
-@cache.cache_output(g, cache.CACHE_COMMON, identify_from_kwarg_name='list_id')
+@cache.cache_output(cache.CACHE_COMMON, identify_from_kwarg_name='list_id')
 def video_list(list_id, perpetual_range_start=None):
     """Retrieve a single video list
     some of this type of request seems to have results fixed at ~40 from netflix
@@ -125,7 +133,7 @@ def video_list(list_id, perpetual_range_start=None):
 
 
 @common.time_execution(immediate=False)
-@cache.cache_output(g, cache.CACHE_COMMON, identify_from_kwarg_name='context_id',
+@cache.cache_output(cache.CACHE_COMMON, identify_from_kwarg_name='context_id',
                     identify_append_from_kwarg_name='perpetual_range_start')
 def video_list_sorted(context_name, context_id=None, perpetual_range_start=None, menu_data=None):
     """Retrieve a single video list sorted
@@ -167,7 +175,7 @@ def custom_video_list(video_ids, custom_paths=None):
 
 
 @common.time_execution(immediate=False)
-@cache.cache_output(g, cache.CACHE_GENRES, identify_from_kwarg_name='genre_id')
+@cache.cache_output(cache.CACHE_GENRES, identify_from_kwarg_name='genre_id')
 def genre(genre_id):
     """Retrieve LoLoMos for the given genre"""
     common.debug('Requesting LoLoMos for genre {}', genre_id)
@@ -193,7 +201,7 @@ def subgenre(genre_id):
 
 
 @common.time_execution(immediate=False)
-@cache.cache_output(g, cache.CACHE_COMMON)
+@cache.cache_output(cache.CACHE_COMMON)
 def seasons(videoid):
     """Retrieve seasons of a TV show"""
     if videoid.mediatype != common.VideoId.SHOW:
@@ -209,7 +217,7 @@ def seasons(videoid):
 
 
 @common.time_execution(immediate=False)
-@cache.cache_output(g, cache.CACHE_COMMON, identify_from_kwarg_name='videoid_value',
+@cache.cache_output(cache.CACHE_COMMON, identify_from_kwarg_name='videoid_value',
                     identify_append_from_kwarg_name='perpetual_range_start')
 def episodes(videoid, videoid_value, perpetual_range_start=None):  # pylint: disable=unused-argument
     """Retrieve episodes of a season"""
@@ -231,7 +239,7 @@ def episodes(videoid, videoid_value, perpetual_range_start=None):  # pylint: dis
 
 
 @common.time_execution(immediate=False)
-@cache.cache_output(g, cache.CACHE_SUPPLEMENTAL)
+@cache.cache_output(cache.CACHE_SUPPLEMENTAL)
 def supplemental_video_list(videoid, supplemental_type):
     """Retrieve a supplemental video list"""
     if videoid.mediatype != common.VideoId.SHOW and videoid.mediatype != common.VideoId.MOVIE:
@@ -246,7 +254,7 @@ def supplemental_video_list(videoid, supplemental_type):
 
 
 @common.time_execution(immediate=False)
-@cache.cache_output(g, cache.CACHE_COMMON)
+@cache.cache_output(cache.CACHE_COMMON)
 def single_info(videoid):
     """Retrieve info for a single episode"""
     if videoid.mediatype not in [common.VideoId.EPISODE, common.VideoId.MOVIE,
@@ -286,7 +294,7 @@ def custom_video_list_basicinfo(context_name, switch_profiles=False):
 # We can not have the changes in real-time, if my-list is modified using other apps,
 # every 10 minutes will be updated with the new data
 # Never disable the cache to this function, it would cause plentiful requests to the service!
-@cache.cache_output(g, cache.CACHE_COMMON, fixed_identifier='my_list_items', ttl=600)
+@cache.cache_output(cache.CACHE_COMMON, fixed_identifier='my_list_items', ttl=600)
 def mylist_items():
     """Return a list of all the items currently contained in my list"""
     common.debug('Try to perform a request to get the id list of the videos in my list')
@@ -436,7 +444,7 @@ def _episode_metadata(videoid):
 
 
 @common.time_execution(immediate=False)
-@cache.cache_output(g, cache.CACHE_METADATA, identify_from_kwarg_name='video_id',
+@cache.cache_output(cache.CACHE_METADATA, identify_from_kwarg_name='video_id',
                     ttl=g.CACHE_METADATA_TTL, to_disk=True)
 def _metadata(video_id):
     """Retrieve additional metadata for a video.This is a separate method from
@@ -444,13 +452,20 @@ def _metadata(video_id):
     to a show by Netflix."""
     common.debug('Requesting metadata for {}', video_id)
     # Always use params 'movieid' to all videoid identifier
-    return common.make_call(
+    metadata_data = common.make_call(
         'get',
         {
             'component': 'metadata',
             'req_type': 'api',
             'params': {'movieid': video_id.value}
-        })['video']
+        })
+    if not metadata_data:
+        # This return empty
+        # - if the metadata is no longer available
+        # - if it has been exported a tv show/movie from a specific language profile that is not
+        #   available using profiles with other languages
+        raise MetadataNotAvailable
+    return metadata_data['video']
 
 
 @common.time_execution(immediate=False)

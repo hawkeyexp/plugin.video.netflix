@@ -16,7 +16,6 @@ class BaseDatabase(object):
     """
     def __init__(self):
         self.conn = None
-        self.is_connected = False
         self._initialize_connection()
 
     def _initialize_connection(self):
@@ -25,7 +24,7 @@ class BaseDatabase(object):
         """
         raise NotImplementedError
 
-    def _execute_non_query(self, query, params=None, cursor=None):
+    def _execute_non_query(self, query, params=None, cursor=None, **kwargs):
         """
         Execute a query without returning a value
         :param query: sql query
