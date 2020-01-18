@@ -10,18 +10,20 @@
 from __future__ import absolute_import, division, unicode_literals
 
 import sqlite3 as sql
+import threading
 from functools import wraps
+
+import resources.lib.common as common
+import resources.lib.database.db_base as db_base
+import resources.lib.database.db_create_sqlite as db_create_sqlite
+import resources.lib.database.db_utils as db_utils
+from resources.lib.database.db_exceptions import SQLiteConnectionError, SQLiteError
 
 try:  # Python 2
     from itertools import izip as zip  # pylint: disable=redefined-builtin
 except ImportError:
     pass
 
-import resources.lib.common as common
-import resources.lib.database.db_base as db_base
-import resources.lib.database.db_create_sqlite as db_create_sqlite
-import resources.lib.database.db_utils as db_utils
-from resources.lib.database.db_exceptions import (SQLiteConnectionError, SQLiteError)
 
 CONN_ISOLATION_LEVEL = None  # Autocommit mode
 
@@ -45,32 +47,43 @@ def handle_connection(func):
         conn = None
         try:
             if not args[0].is_connected:
+                args[0].mutex.acquire()
                 args[0].conn = sql.connect(args[0].db_file_path,
-                                           isolation_level=CONN_ISOLATION_LEVEL,
-                                           check_same_thread=False)
+                                           isolation_level=CONN_ISOLATION_LEVEL)
                 args[0].is_connected = True
                 conn = args[0].conn
+
             return func(*args, **kwargs)
         except sql.Error as exc:
             common.error('SQLite error {}:', exc.args[0])
             raise SQLiteConnectionError
         finally:
             if conn:
-                conn.close()
                 args[0].is_connected = False
+                conn.close()
+                args[0].mutex.release()
     return wrapper
 
 
 class SQLiteDatabase(db_base.BaseDatabase):
     def __init__(self, db_filename):  # pylint: disable=super-on-old-class
+        self.mutex = threading.Lock()
+        self.local_storage = threading.local()
         self.is_mysql_database = False
         self.db_filename = db_filename
         self.db_file_path = db_utils.get_local_db_path(db_filename)
         super(SQLiteDatabase, self).__init__()
 
+    @property
+    def is_connected(self):
+        return getattr(self.local_storage, 'is_connected', False)
+
+    @is_connected.setter
+    def is_connected(self, val):
+        self.local_storage.is_connected = val
+
     def _initialize_connection(self):
         try:
-
             common.debug('Trying connection to the database {}', self.db_filename)
             self.conn = sql.connect(self.db_file_path, check_same_thread=False)
             cur = self.conn.cursor()
@@ -92,7 +105,7 @@ class SQLiteDatabase(db_base.BaseDatabase):
             if self.conn:
                 self.conn.close()
 
-    def _execute_non_query(self, query, params=None, cursor=None):
+    def _execute_non_query(self, query, params=None, cursor=None, **kwargs):
         try:
             if cursor is None:
                 cursor = self.get_cursor()

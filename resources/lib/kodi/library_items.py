@@ -19,6 +19,7 @@ import xbmcvfs
 import resources.lib.api.shakti as api
 import resources.lib.common as common
 import resources.lib.kodi.ui as ui
+from resources.lib.api.exceptions import MetadataNotAvailable
 from resources.lib.globals import g
 
 LIBRARY_HOME = 'library'
@@ -118,6 +119,8 @@ def get_previously_exported_items():
                     # and movies only contain one file
                     result.append(
                         _get_root_videoid(filepath, videoid_pattern))
+                except MetadataNotAvailable:
+                    common.warn('Metadata not available, item skipped')
                 except (AttributeError, IndexError):
                     common.warn('Item does not conform to old format')
                 break
@@ -168,8 +171,7 @@ def export_item(item_task, library_home):
 
 def _create_destination_folder(destination_folder):
     """Create destination folder, ignore error if it already exists"""
-    destination_folder = xbmc.translatePath(destination_folder)
-    if not xbmcvfs.exists(destination_folder):
+    if not common.folder_exists(destination_folder):
         xbmcvfs.mkdirs(destination_folder)
 
 

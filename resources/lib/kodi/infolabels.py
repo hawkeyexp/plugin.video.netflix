@@ -65,7 +65,7 @@ def add_info(videoid, list_item, item, raw_data, set_info=False):
         list_item.addStreamInfo(stream_type, quality_infos)
     if item.get('dpSupplementalMessage'):
         # Short information about future release of tv show season or other
-        infos_copy['plot'] += ' [COLOR green]{}[/COLOR]'.format(item['dpSupplementalMessage'])
+        infos_copy['plot'] += '[CR][COLOR green]{}[/COLOR]'.format(item['dpSupplementalMessage'])
     if set_info:
         list_item.setInfo('video', infos_copy)
     return infos_copy
@@ -123,10 +123,14 @@ def parse_info(videoid, item, raw_data):
 
 
 def parse_atomic_infos(item):
-    """Parse those infos into infolabels that are directly accesible from
-    the item dict"""
-    return {target: _get_and_transform(source, target, item)
-            for target, source in iteritems(paths.INFO_MAPPINGS)}
+    """Parse those infos into infolabels that are directly accessible from the item dict"""
+    infos = {target: _get_and_transform(source, target, item)
+             for target, source in iteritems(paths.INFO_MAPPINGS)}
+    # When you browse the seasons list, season numbering is provided from a different property
+    season_shortname = infos.pop('season_shortname')
+    if season_shortname:
+        infos.update({'season': season_shortname})
+    return infos
 
 
 def _get_and_transform(source, target, item):
